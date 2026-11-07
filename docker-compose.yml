@@ -28,6 +28,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "5001:5001"
     environment:
+      - PORT=5001
       - BACKEND_URL=http://api:5000

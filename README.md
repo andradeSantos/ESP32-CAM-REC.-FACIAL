@@ -13,7 +13,7 @@ O repositório é dividido em três partes principais:
 | Pasta | Componente | Porta Padrão | Descrição |
 |---|---|---|---|
 | `pc/` | **Backend / API Python** | `5000` | Servidor Flask/Gunicorn com modelos ONNX (`YuNet` + `HSEmotion`), endpoint `POST /analisar`, painel HTML leve embutido e scripts de vídeo/simulação. |
-| `web/` | **Dashboard Web (Next.js)** | `3000` | Interface moderna com diagnóstico em tempo real, histórico da sessão, upload de fotos e **simulador de ESP32 via webcam** direto no navegador. |
+| `web/` | **Dashboard Web (Next.js)** | `5001` | Interface moderna com diagnóstico em tempo real, histórico da sessão, upload de fotos e **simulador de ESP32 via webcam** direto no navegador. |
 | `firmware/` | **Firmware ESP32-CAM** | `80` / `81` | Sketch Arduino (`esp32cam_expressoes.ino`) que captura quadros JPEG e envia periodicamente ao servidor. |
 
 ---
@@ -24,7 +24,7 @@ Com o Docker e o Docker Compose, o backend Python (já com os modelos ONNX baixa
 
 ### Pré-requisitos
 - **Docker** e **Docker Compose** instalados.
-- As portas **`3000`** e **`5000`** livres na máquina hospedeira (feche qualquer instância local de `servidor.py` antes de subir os containers).
+- As portas **`5001`** e **`5000`** livres na máquina hospedeira (feche qualquer instância local de `servidor.py` antes de subir os containers).
 
 ### Passo a passo
 
@@ -43,11 +43,11 @@ Com o Docker e o Docker Compose, o backend Python (já com os modelos ONNX baixa
    ```bash
    docker compose ps
    ```
-   A saída esperada deve mostrar `0.0.0.0:5000->5000/tcp` na `api` e `0.0.0.0:3000->3000/tcp` no `web`:
+   A saída esperada deve mostrar `0.0.0.0:5000->5000/tcp` na `api` e `0.0.0.0:5001->5001/tcp` no `web`:
    ```text
    NAME                      SERVICE   STATUS                   PORTS
    esp32cam-expressoes-api   api       Up (healthy)             0.0.0.0:5000->5000/tcp
-   esp32cam-expressoes-web   web       Up                       0.0.0.0:3000->3000/tcp
+   esp32cam-expressoes-web   web       Up                       0.0.0.0:5001->5001/tcp
    ```
 
 4. **Consulte a senha do Dashboard e a chave de API do ESP32:**
@@ -61,7 +61,7 @@ Com o Docker e o Docker Compose, o backend Python (já com os modelos ONNX baixa
    ```
 
 5. **Acesse o Dashboard no navegador:**
-   - **Dashboard completo (Next.js):** [http://localhost:3000](http://localhost:3000)
+   - **Dashboard completo (Next.js):** [http://localhost:5001](http://localhost:5001)
    - **Página compacta da API (Flask):** [http://localhost:5000](http://localhost:5000)
 
 ### Comandos úteis do Docker

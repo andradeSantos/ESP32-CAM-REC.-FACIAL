@@ -1,5 +1,5 @@
-# Senha do Wi-Fi e endereco do PC
-firmware/esp32cam_expressoes/segredos.h
+# Firmware ESP32
+firmware/
 
 # Segredos da pagina e API
 pc/senha_web.txt
