@@ -12,9 +12,14 @@
 #include "esp_http_server.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 // Wi-Fi e endereco do servidor: copie segredos.exemplo.h para segredos.h e preencha.
 #include "segredos.h"
+
+#ifndef SERVIDOR_API_KEY
+const char *SERVIDOR_API_KEY = "";
+#endif
 
 const unsigned long INTERVALO_ENVIO_MS = 5000;
 
@@ -179,10 +184,20 @@ static void enviar_foto() {
   }
 
   HTTPClient http;
-  http.setConnectTimeout(3000);
+  WiFiClient cliente_http;
+  WiFiClientSecure cliente_https;
+  http.setConnectTimeout(5000);
   http.setTimeout(10000);
-  http.begin(SERVIDOR_URL);
+  if (strncmp(SERVIDOR_URL, "https://", 8) == 0) {
+    cliente_https.setInsecure();
+    http.begin(cliente_https, SERVIDOR_URL);
+  } else {
+    http.begin(cliente_http, SERVIDOR_URL);
+  }
   http.addHeader("Content-Type", "image/jpeg");
+  if (SERVIDOR_API_KEY && SERVIDOR_API_KEY[0] != '\0') {
+    http.addHeader("X-API-Key", SERVIDOR_API_KEY);
+  }
   int status = http.POST(fb->buf, fb->len);
   esp_camera_fb_return(fb);
 

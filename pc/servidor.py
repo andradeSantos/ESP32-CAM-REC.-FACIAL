@@ -6,10 +6,13 @@ Uso:
 
 A página em http://127.0.0.1:5000 mostra os resultados da placa e pede a senha guardada
 em senha_web.txt, criada na primeira execução. Para publicá-la na internet, use publicar.py.
+Em produção (ou com o frontend Next.js em ../web), aceita também configuração por variáveis
+de ambiente (.env) e autenticação por X-API-Key (ESP32) ou X-Web-Password / Bearer (Frontend).
 
 A placa (ou qualquer cliente HTTP) envia assim:
     POST /analisar
     Content-Type: image/jpeg
+    X-API-Key: <chave_opcional_ou_obrigatoria_em_producao>
     <bytes da imagem>
 
 Resposta:
@@ -23,12 +26,14 @@ Valores de `status`:
     IMAGE_TOO_LARGE    erro 413: imagem maior que 5 MB
 
 Se houver vários rostos, a resposta é sobre o maior deles. Só um aparelho da rede local
-pode enviar sem senha; quem vem pela internet precisa dela.
+pode enviar sem senha (quando EXP_ALLOW_LOCAL_NO_KEY=true); quem vem pela internet precisa
+da senha ou da X-API-Key.
 """
 
 import argparse
 import hmac
 import ipaddress
+import os
 import secrets
 import socket
 import sys
@@ -40,9 +45,30 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.serving import WSGIRequestHandler
 
 from expressoes import ClassificadorHSEmotion, DetectorRostos
+
+PASTA = Path(__file__).parent
+
+
+def carregar_dotenv(caminho: Path = PASTA / ".env"):
+    """Carrega variáveis de um arquivo .env simples sem sobrescrever as já definidas no ambiente."""
+    if not caminho.exists():
+        return
+    for linha in caminho.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        chave, valor = linha.split("=", 1)
+        chave = chave.strip()
+        valor = valor.strip().strip('"').strip("'")
+        if chave and chave not in os.environ:
+            os.environ[chave] = valor
+
+
+carregar_dotenv()
 
 EM_INGLES = {
     "neutro": "neutral",
@@ -54,9 +80,10 @@ EM_INGLES = {
     "medo": "fear",
 }
 TAMANHO_MAXIMO = 5 * 1024 * 1024
-LIMITE_CONFIANCA = 0.40
-ITENS_HISTORICO = 10
-ARQUIVO_SENHA = Path(__file__).parent / "senha_web.txt"
+LIMITE_CONFIANCA = float(os.environ.get("EXP_CONFIDENCE_LIMIT", "0.40"))
+ITENS_HISTORICO = int(os.environ.get("EXP_HISTORY_ITEMS", "20"))
+ARQUIVO_SENHA = PASTA / "senha_web.txt"
+ARQUIVO_CHAVE_API = PASTA / "chave_api.txt"
 
 PAGINA = """<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
@@ -165,11 +192,35 @@ setInterval(atualizar, 2000);
 </script></body></html>"""
 
 
+def flag_ambiente(nome: str, padrao: bool) -> bool:
+    valor = os.environ.get(nome)
+    if valor is None:
+        return padrao
+    return valor.strip().lower() in {"1", "true", "sim", "yes", "on"}
+
+
+def _ler_ou_criar_segredo(caminho: Path, nbytes: int) -> str:
+    if caminho.is_dir():
+        caminho = caminho / "segredo.txt"
+    if not caminho.exists():
+        caminho.write_text(secrets.token_urlsafe(nbytes), encoding="ascii")
+    return caminho.read_text(encoding="ascii").strip()
+
+
 def senha_web() -> str:
-    """Lê a senha da página. Na primeira execução, sorteia uma e a guarda em senha_web.txt."""
-    if not ARQUIVO_SENHA.exists():
-        ARQUIVO_SENHA.write_text(secrets.token_urlsafe(12), encoding="ascii")
-    return ARQUIVO_SENHA.read_text(encoding="ascii").strip()
+    """Lê a senha da página (de EXP_WEB_PASSWORD ou senha_web.txt). Na primeira execução, sorteia uma."""
+    env_senha = os.environ.get("EXP_WEB_PASSWORD", "").strip()
+    if env_senha:
+        return env_senha
+    return _ler_ou_criar_segredo(ARQUIVO_SENHA, 12)
+
+
+def chave_api() -> str:
+    """Lê a chave de API do ESP32 (de EXP_API_KEY ou chave_api.txt). Na primeira execução, sorteia uma."""
+    env_chave = os.environ.get("EXP_API_KEY", "").strip()
+    if env_chave:
+        return env_chave
+    return _ler_ou_criar_segredo(ARQUIVO_CHAVE_API, 24)
 
 
 def veio_da_rede_local() -> bool:
@@ -180,7 +231,10 @@ def veio_da_rede_local() -> bool:
     """
     if "Cf-Connecting-IP" in request.headers:
         return False
-    ip = ipaddress.ip_address(request.remote_addr)
+    try:
+        ip = ipaddress.ip_address(request.remote_addr or "")
+    except ValueError:
+        return False
     return ip.is_private and not ip.is_loopback
 
 
@@ -194,7 +248,14 @@ def decodificar(dados: bytes) -> np.ndarray | None:
 def analisar_quadro(quadro: np.ndarray, detector: DetectorRostos, classificador: ClassificadorHSEmotion) -> dict:
     caixas = detector.detectar(quadro)
     if not caixas:
-        return {"status": "NO_FACE_DETECTED", "expression": None, "label": None, "confidence": None, "faces": 0}
+        return {
+            "status": "NO_FACE_DETECTED",
+            "expression": None,
+            "label": None,
+            "confidence": None,
+            "faces": 0,
+            "box": None,
+        }
     x, y, w, h = max(caixas, key=lambda c: c[2] * c[3])
     rotulo, confianca = classificador.classificar(quadro[y : y + h, x : x + w])
     confianca = round(confianca, 4)
@@ -205,6 +266,7 @@ def analisar_quadro(quadro: np.ndarray, detector: DetectorRostos, classificador:
             "label": "inconclusivo",
             "confidence": confianca,
             "faces": len(caixas),
+            "box": [x, y, w, h],
         }
     return {
         "status": "OK",
@@ -212,6 +274,7 @@ def analisar_quadro(quadro: np.ndarray, detector: DetectorRostos, classificador:
         "label": rotulo,
         "confidence": confianca,
         "faces": len(caixas),
+        "box": [x, y, w, h],
     }
 
 
@@ -253,29 +316,82 @@ def criar_app() -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = TAMANHO_MAXIMO
     app.json.ensure_ascii = False
+
+    if flag_ambiente("EXP_TRUST_PROXY", False):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
     detector = DetectorRostos()
     classificador = ClassificadorHSEmotion()
     # O detector guarda o tamanho da imagem, então só uma análise roda por vez.
     trava_analise = threading.Lock()
     painel = Painel()
     senha = senha_web().encode()
+    chave = chave_api().encode()
+    aceitar_rede_local_sem_chave = flag_ambiente("EXP_ALLOW_LOCAL_NO_KEY", True)
+    cors_origins = os.environ.get("EXP_CORS_ORIGINS", "*")
+
+    def chave_api_valida() -> bool:
+        recebida = request.headers.get("X-API-Key", "")
+        return bool(recebida) and hmac.compare_digest(recebida.encode(), chave)
+
+    def senha_web_valida() -> bool:
+        # 1. Header X-Web-Password
+        header_senha = request.headers.get("X-Web-Password", "")
+        if header_senha and hmac.compare_digest(header_senha.encode(), senha):
+            return True
+        # 2. Header Authorization: Bearer <senha>
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            if token and hmac.compare_digest(token.encode(), senha):
+                return True
+        # 3. HTTP Basic Auth (usado pelo navegador no modo HTML embutido)
+        auth = request.authorization
+        if auth and auth.password and hmac.compare_digest(auth.password.encode(), senha):
+            return True
+        # 4. Query string ?senha= (útil para tag <img> em clientes autenticados)
+        query_senha = request.args.get("senha", "")
+        if query_senha and hmac.compare_digest(query_senha.encode(), senha):
+            return True
+        return False
 
     @app.before_request
     def exigir_senha():
-        if request.endpoint == "analisar" and veio_da_rede_local():
+        if request.method == "OPTIONS" or request.endpoint == "health":
             return None
-        auth = request.authorization
-        if auth and auth.password and hmac.compare_digest(auth.password.encode(), senha):
+        if request.endpoint == "analisar":
+            if chave_api_valida():
+                return None
+            if aceitar_rede_local_sem_chave and veio_da_rede_local():
+                return None
+        if senha_web_valida():
             return None
+        # Se a chamada veio do frontend moderno (JSON/fetch com X-Requested-With ou Accept JSON),
+        # evitamos disparar o popup nativo do navegador omitindo WWW-Authenticate quando solicitado.
+        if request.headers.get("X-No-Basic-Challenge") == "1":
+            return jsonify(error="Não autorizado. Verifique a senha ou chave de API."), 401
         return Response(
             "Esta página precisa de senha.", 401, {"WWW-Authenticate": 'Basic realm="Expressoes", charset="UTF-8"'}
         )
 
     @app.after_request
-    def sem_cache(resposta):
+    def configurar_cabecalhos(resposta):
         # As fotos não podem ficar guardadas nos servidores do túnel nem no navegador.
         resposta.headers["Cache-Control"] = "no-store"
+        resposta.headers["Access-Control-Allow-Origin"] = cors_origins
+        resposta.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, Authorization, X-Web-Password, X-API-Key, X-Origem, X-No-Basic-Challenge"
+        )
+        resposta.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         return resposta
+
+    @app.get("/health")
+    def health():
+        return jsonify(status="ok", models_loaded=True)
+
+    @app.get("/auth/verificar")
+    def verificar_auth():
+        return jsonify(authenticated=True)
 
     @app.get("/")
     def inicio():
@@ -288,7 +404,14 @@ def criar_app() -> Flask:
             return jsonify(status="INVALID_IMAGE", error="O corpo da requisição não é uma imagem válida."), 400
         with trava_analise:
             resultado = analisar_quadro(quadro, detector, classificador)
-        painel.registrar(quadro, resultado, "teste manual" if request.authorization else "placa")
+        origem_custom = request.headers.get("X-Origem", "").strip()[:32]
+        if origem_custom:
+            origem = origem_custom
+        elif chave_api_valida() or (not senha_web_valida() and veio_da_rede_local()):
+            origem = "placa"
+        else:
+            origem = "teste manual"
+        painel.registrar(quadro, resultado, origem)
         return jsonify(resultado)
 
     @app.get("/ultimo")
@@ -324,13 +447,18 @@ def porta_ocupada(porta: int) -> bool:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="127.0.0.1", help="use 0.0.0.0 para aceitar a placa pela rede")
-    ap.add_argument("--porta", type=int, default=5000)
+    ap.add_argument(
+        "--host",
+        default=os.environ.get("EXP_HOST", "127.0.0.1"),
+        help="use 0.0.0.0 para aceitar a placa pela rede",
+    )
+    ap.add_argument("--porta", type=int, default=int(os.environ.get("EXP_PORT", "5000")))
     args = ap.parse_args()
     # No Windows, dois servidores conseguem abrir a mesma porta, e um deles fica recebendo as fotos sem aviso.
     if porta_ocupada(args.porta):
         sys.exit(f"Ja existe um servidor aberto na porta {args.porta}. Feche-o antes de abrir outro.")
     print(f"Senha da pagina: {senha_web()}", flush=True)
+    print(f"Chave de API (ESP32): {chave_api()}", flush=True)
     criar_app().run(host=args.host, port=args.porta, threaded=True, request_handler=TratadorComLimite)
 
 

@@ -3,3 +3,4 @@ onnxruntime
 numpy
 pyserial
 flask
+gunicorn

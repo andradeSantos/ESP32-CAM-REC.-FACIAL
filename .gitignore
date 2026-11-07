@@ -1,8 +1,12 @@
 # Senha do Wi-Fi e endereco do PC
 firmware/esp32cam_expressoes/segredos.h
 
-# Senha da pagina
+# Segredos da pagina e API
 pc/senha_web.txt
+pc/chave_api.txt
+.env
+pc/.env
+web/.env*
 
 # Baixado automaticamente ao publicar
 pc/ferramentas/
@@ -19,3 +23,9 @@ pc/modelos/
 pc/capturas/
 pc/dados/
 pc/ultimo_ip.txt
+
+# Frontend Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
