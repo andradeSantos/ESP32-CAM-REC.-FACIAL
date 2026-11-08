@@ -267,7 +267,7 @@ export default function DashboardPage() {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+          videoRef.current.play().catch(() => { });
         }
       }, 50);
     } catch (err: unknown) {
@@ -362,9 +362,9 @@ export default function DashboardPage() {
           </div>
 
           <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-            Digite a senha de acesso ao painel gerada pelo servidor (disponível no terminal ou em{" "}
+            Digite a senha de acesso ao painel gerada pelo servidor (disponível pelo{" "}
             <code className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 text-xs">
-              pc/senha_web.txt
+              administrador
             </code>
             ).
           </p>
@@ -420,8 +420,8 @@ export default function DashboardPage() {
       item.status === "NO_FACE_DETECTED"
         ? "sem rosto"
         : item.status === "INCONCLUSIVE"
-        ? "inconclusivo"
-        : item.label || "outro";
+          ? "inconclusivo"
+          : item.label || "outro";
     contagemHistorico[k] = (contagemHistorico[k] || 0) + 1;
   }
 
@@ -447,16 +447,14 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-3">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
-                online
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${online
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                   : "bg-rose-500/10 border-rose-500/30 text-rose-400"
-              }`}
+                }`}
             >
               <span
-                className={`w-2 h-2 rounded-full ${
-                  online ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
-                }`}
+                className={`w-2 h-2 rounded-full ${online ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
+                  }`}
               />
               {online ? "API Conectada" : "Sem conexão com o servidor"}
             </div>
@@ -543,22 +541,20 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setAbaTeste("webcam")}
-                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
-                    abaTeste === "webcam"
+                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${abaTeste === "webcam"
                       ? "bg-indigo-600 text-white"
                       : "text-slate-400 hover:text-white"
-                  }`}
+                    }`}
                 >
                   Webcam ao Vivo
                 </button>
                 <button
                   type="button"
                   onClick={() => setAbaTeste("upload")}
-                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
-                    abaTeste === "upload"
+                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${abaTeste === "upload"
                       ? "bg-indigo-600 text-white"
                       : "text-slate-400 hover:text-white"
-                  }`}
+                    }`}
                 >
                   Enviar Arquivo
                 </button>
@@ -611,11 +607,10 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => setAutoEnvio((v) => !v)}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                            autoEnvio
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${autoEnvio
                               ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
                               : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
-                          }`}
+                            }`}
                         >
                           {autoEnvio ? (
                             <>
